@@ -1,0 +1,72 @@
+select Survey_Type,
+[2017-10],[2017-11],[2017-12],[2018-01], [2018-02], [2018-03], [2018-04], [2018-05], [2018-06], [2018-07], [2018-08], [2018-09]
+
+from
+
+(select Survey_Type, [YearMonth],
+ round((sum([num])/sum([denom]) *100.00), 1) as [percent]
+
+from 
+(select distinct t2.ENCOUNTER_NUMBER, r.VAR_NAME
+
+,REPLACE(CONVERT(VARCHAR(7), t2.DISCHARGE_DATE, 111), '/', '-')  as [YearMonth] 
+,(case when t2.DISCHARGE_DATE>='2016-10-01' and t2.DISCHARGE_DATE<='2017-09-30' then 'FY17'
+when t2.DISCHARGE_DATE>='2017-10-01' and t2.DISCHARGE_DATE<='2018-09-30' then 'FY18'
+when t2.DISCHARGE_DATE>='2018-10-01' and t2.DISCHARGE_DATE<='2019-09-30' then 'FY19'
+ end) as [FY]
+
+,r.response
+
+,cast((case when r.VAR_NAME='CMS_23' and (r.response='10-Best possible' or r.response='10-Best hosp' or r.response='9') then 1 
+ when r.VAR_NAME='CH_48' and (r.response='10-Best possible' or r.response='10-Best hosp' or r.response='9') then 1
+ when (r.VAR_NAME='CG_25' or r.VAR_NAME='CG_25CL') and (r.response='10-Best provider' or r.response='9') then 1 
+ when (r.VAR_NAME='OSC_23' and r.response= '10-Best facility possible' or r.response='9') then 1 
+ when (r.VAR_NAME='F68' and r.response='5') then 1  else 0 end) as float)
+  as [num] 
+
+
+,cast((case when r.response is not null then 1 else 0 end) as float) as [denom]
+
+
+,(case when r.VAR_NAME='CMS_23' then 'Overall rating- adult inpatient (HCAHPS)' when r.VAR_NAME='CH_48' then 'Overall rating- pediatric inpatient (Child CAHPS)' 
+
+when r.VAR_NAME='F68' then 'Overall rating-ED'  when r.VAR_NAME='OSC_23' then 'Overall rating- ambulatory surgery (OASCAHPS)' 
+
+when (r.VAR_NAME='CG_25' or r.VAR_NAME='CG_25CL') then 'CGCAHPS providr overall rating' 
+
+else ' ' end) as [Survey_Type] 
+
+from [SpotFire].[dbo].[T2_Encounters] T2 LEFT OUTER JOIN 
+[QualitySafety_Prod].[dbo].[PG_Responses] r on t2.ENCOUNTER_NUMBER=r.UNIQUE_ID LEFT OUTER JOIN 
+[QualitySafety_Prod].[dbo].[PG_SuppSurveyDesignators] d on d.[Service Designator]=r.SERV_TYPE 
+
+
+where (r.VAR_NAME='CMS_23' or r.VAR_NAME='CH_48' or r.VAR_NAME='F68' or r.VAR_NAME='OSC_23' or r.VAR_NAME='CG_25' or r.VAR_NAME='CG_25CL')
+ and r.response is not null and r.RESPONSE <> ' ' 
+
+ 
+ 
+ )
+ as src
+
+ group by Survey_Type, YearMonth
+ ) 
+
+ as tbl
+
+ pivot(
+ 
+ sum([percent]) for YearMonth in ([2017-10],[2017-11],[2017-12],[2018-01], [2018-02], [2018-03], [2018-04], [2018-05], [2018-06], [2018-07], [2018-08], [2018-09])
+
+ )
+
+ as pvt
+
+ order by 
+ (case when Survey_Type='Overall rating- adult inpatient (HCAHPS)' then 1
+  when Survey_Type='CGCAHPS providr overall rating' then 2
+  when  Survey_Type='Overall rating- pediatric inpatient (Child CAHPS)' then 3
+  when Survey_Type='Overall rating-ED' then 4
+  when Survey_Type='Overall rating- ambulatory surgery (OASCAHPS)' then 5
+ end)
+ asc
